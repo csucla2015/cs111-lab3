@@ -1081,7 +1081,7 @@ ospfs_read(struct file *filp, char __user *buffer, size_t count, loff_t *f_pos)
 
 		//We can get more
 		if ( curoffset + remaining > OSPFS_BLKSIZE)
-			n = OSPFS_BLKSIZE - curoffset // If no space available
+			n = OSPFS_BLKSIZE - curoffset; // If no space available
 		else
 			//If space avaialble
 			n = remaining;
@@ -1255,7 +1255,35 @@ create_blank_direntry(ospfs_inode_t *dir_oi)
 	//    entries and return one of them.
 
 	/* EXERCISE: Your code here. */
-	return ERR_PTR(-EINVAL); // Replace this line
+	//return ERR_PTR(-EINVAL); // Replace this line
+
+	ospfs_direntry_t* blank_direntry;
+	int i;
+
+	for(i = 0; i < dir_oi->oi_size; i+= OSPFS_DIRENTRY_SIZE)
+	{
+		blank_direntry = ospfs_inode_data(dir_oi,i);
+		
+		if(blank_direntry->od_ino == 0)
+			return blank_direntry;
+
+	}
+
+	blank_direntry = NULL;
+
+	int retval = change_size(dir_oi, dir_oi->oi_size + OSPFS_DIRENTRY_SIZE);
+	if(retval < 0) return ERR_PTR(retval);
+
+	blank_direntry = ospfs_inode_data(dir_oi,dir_oi->oi_size - OSPFS_DIRENTRY_SIZE);
+	blank_direntry->od_ino = 0;
+
+	return blank_direntry;
+
+
+	
+	
+	
+	
 }
 
 // ospfs_link(src_dentry, dir, dst_dentry
