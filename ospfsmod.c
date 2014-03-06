@@ -1081,7 +1081,7 @@ ospfs_read(struct file *filp, char __user *buffer, size_t count, loff_t *f_pos)
 
 		//We can get more
 		if ( curoffset + remaining > OSPFS_BLKSIZE)
-			n = OSPFS_BLKSIZE - curoffset // If no space available
+			n = OSPFS_BLKSIZE - curoffset; // If no space available
 		else
 			//If space avaialble
 			n = remaining;
