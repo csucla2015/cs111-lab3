@@ -1302,20 +1302,15 @@ create_blank_direntry(ospfs_inode_t *dir_oi)
 	/* EXERCISE: Your code here. */
 	//return ERR_PTR(-EINVAL); // Replace this line
 
-	ospfs_direntry_t* blank_direntry = NULL;
+ospfs_direntry_t* blank_direntry;
 	int i;
 
 	for(i = 0; i < dir_oi->oi_size; i+= OSPFS_DIRENTRY_SIZE)
 	{
 		blank_direntry = ospfs_inode_data(dir_oi,i);
-		
-		if(blank_direntry->od_ino == 0){
-			
-			blank_direntry->od_ino = 0;
-			blank_direntry->od_name[0] = '\0';
-			return blank_direntry;
 
-		}
+		if(blank_direntry->od_ino == 0)
+			return blank_direntry;
 
 	}
 
