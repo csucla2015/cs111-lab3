@@ -753,13 +753,16 @@ add_block(ospfs_inode_t *oi)
   uint32_t tempblock2;
   
   if(oi->oi_ftype == OSPFS_FTYPE_SYMLINK)
-return 0;
+	return 0;
 
 // current number of blocks in file
 n = ospfs_size2nblocks(oi->oi_size);
 
 // keep track of allocations to free in case of -ENOSPC
-uint32_t allocated[2] = { 0, 0 };
+uint32_t allocated[2];
+allocated[0] = 0;
+allocated[1] = 0;
+
   
   
   // For a new indirect block
@@ -769,7 +772,7 @@ uint32_t allocated[2] = { 0, 0 };
 	//Allocate block returned 0, so bad
     if(allocated[0] == 0)
     {
-      if(allocated[1] != 0)//In this case we need to free the lock
+      if(allocated[1] != 0)//In this case we need to free the block
         free_block(allocated[1]);
       return -ENOSPC;
     }
@@ -903,14 +906,15 @@ static int
 remove_block(ospfs_inode_t *oi)
 {
 	
-	uint32_t *indirect1;
-	uint32_t *indirect2;
+	
 	uint32_t n = ospfs_size2nblocks(oi->oi_size);
 	if(n == 0) //No block found
 		return -EIO;
 
 	uint32_t dec = n - 1;
 	//It is singly indirect
+	uint32_t *indirect1;
+	uint32_t *indirect2;
 	 if (dec >= OSPFS_NDIRECT) 
 	{
 		if(oi->oi_indirect == 0)
@@ -929,6 +933,7 @@ remove_block(ospfs_inode_t *oi)
 	}
 
 	//Presence of a doubly indirect block
+	
 	else if(dec >= OSPFS_NDIRECT + OSPFS_NINDIRECT)
 	{
 		if(oi->oi_indirect2 == 0)
