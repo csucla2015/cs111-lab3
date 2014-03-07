@@ -1297,60 +1297,39 @@ create_blank_direntry(ospfs_inode_t *dir_oi)
 	/* EXERCISE: Your code here. */
 	//return ERR_PTR(-EINVAL); // Replace this line
 
-ospfs_direntry_t* blank_direntry;
-int i;
+	ospfs_direntry_t* blank_direntry = NULL;
+	int i;
 
-for(i = 0; i < dir_oi->oi_size; i+= OSPFS_DIRENTRY_SIZE)
-{
-blank_direntry = ospfs_inode_data(dir_oi,i);
+	for(i = 0; i < dir_oi->oi_size; i+= OSPFS_DIRENTRY_SIZE)
+	{
+		blank_direntry = ospfs_inode_data(dir_oi,i);
+		
+		if(blank_direntry->od_ino == 0){
+			
+			blank_direntry->od_ino = 0;
+			blank_direntry->od_name[0] = '\0';
+			return blank_direntry;
 
-if(blank_direntry->od_ino == 0)
-return blank_direntry;
+		}
 
+	}
+
+	blank_direntry = NULL;
+
+	int retval = change_size(dir_oi, dir_oi->oi_size + OSPFS_DIRENTRY_SIZE);
+	if(retval < 0) return ERR_PTR(retval);
+
+	blank_direntry = ospfs_inode_data(dir_oi,dir_oi->oi_size - OSPFS_DIRENTRY_SIZE);
+	blank_direntry->od_ino = 0;
+
+	return blank_direntry;
+
+
+	
+	
+	
+	
 }
-
-blank_direntry = NULL;
-
-int retval = change_size(dir_oi, dir_oi->oi_size + OSPFS_DIRENTRY_SIZE);
-if(retval < 0) return ERR_PTR(retval);
-
-blank_direntry = ospfs_inode_data(dir_oi,dir_oi->oi_size - OSPFS_DIRENTRY_SIZE);
-blank_direntry->od_ino = 0;
-
-return blank_direntry;	
-	
-	
-	
-}
-
-// ospfs_link(src_dentry, dir, dst_dentry
-//   Linux calls this function to create hard links.
-//   It is the ospfs_dir_inode_ops.link callback.
-//
-//   Inputs: src_dentry   -- a pointer to the dentry for the source file.  This
-//                           file's inode contains the real data for the hard
-//                           linked filae.  The important elements are:
-//                             src_dentry->d_name.name
-//                             src_dentry->d_name.len
-//                             src_dentry->d_inode->i_ino
-//           dir          -- a pointer to the containing directory for the new
-//                           hard link.
-//           dst_dentry   -- a pointer to the dentry for the new hard link file.
-//                           The important elements are:
-//                             dst_dentry->d_name.name
-//                             dst_dentry->d_name.len
-//                             dst_dentry->d_inode->i_ino
-//                           Two of these values are already set.  One must be
-//                           set by you, which one?
-//   Returns: 0 on success, -(error code) on error.  In particular:
-//               -ENAMETOOLONG if dst_dentry->d_name.len is too large, or
-//			       'symname' is too long;
-//               -EEXIST       if a file named the same as 'dst_dentry' already
-//                             exists in the given 'dir';
-//               -ENOSPC       if the disk is full & the file can't be created;
-//               -EIO          on I/O error.
-//
-//   EXERCISE: Complete this function.
 
 // ospfs_link(src_dentry, dir, dst_dentry
 //   Linux calls this function to create hard links.
@@ -1439,66 +1418,61 @@ ospfs_link(struct dentry *src_dentry, struct inode *dir, struct dentry *dst_dent
 //
 //   EXERCISE: Complete this function.
 
-	static int
+static int
 ospfs_create(struct inode *dir, struct dentry *dentry, int mode, struct nameidata *nd)
 {
 	ospfs_inode_t *dir_oi = ospfs_inode(dir->i_ino);
 	uint32_t entry_ino = 0;
 	/* EXERCISE: Your code here. */
-	//	return -EINVAL; // Replace this line
+	//return -EINVAL; // Replace this line
 
-	ospfs_direntry_t * created_directory;
-	ospfs_inode_t * created_inode;
-
-	//check for -EEXIST error
+	ospfs_direntry_t* blank_direntry = create_blank_direntry(dir_oi);
+	if(IS_ERR(blank_direntry)) return PTR_ERR(blank_direntry);
+	
+	
 	if(find_direntry(dir_oi, dentry->d_name.name, dentry->d_name.len) != NULL)
-	{
 		return -EEXIST;
-	}
 
-	//look for an empty directory
-	created_directory = create_blank_direntry(dir_oi);
-	if(IS_ERR(created_directory))
+	if(dentry->d_name.len > OSPFS_MAXNAMELEN)
+		return -ENAMETOOLONG;
+
+	int flag = 0;
+	ospfs_inode_t* temp;
+	for(entry_ino = 0; entry_ino < ospfs_super->os_ninodes; entry_ino++)
 	{
-		return PTR_ERR(created_directory);
-	}
+		 temp = ospfs_inode(entry_ino);
 
-	//while there are inodes to check left
-	while(ospfs_super->os_ninodes > entry_ino)
-	{
-		//get the inode at that entry
-		created_inode = ospfs_inode(entry_ino);
-
-		//check if the inode exists, and is free as well
-		if(created_inode && created_inode->oi_nlink == 0)
+		if(temp->oi_nlink == 0)
 		{
-			created_inode->oi_nlink++;
+			temp->oi_nlink++;
+			flag = 1;
 			break;
 		}
 
-		//increment entry ino to keep checking	
-		entry_ino++;
 	}
 
-	//error that we are out of space if the limit was reached
-	if(entry_ino == ospfs_super->os_ninodes)
-	{
+	if(flag == 0)
 		return -ENOSPC;
+
+	
+	
+	blank_direntry->od_ino = entry_ino;
+	memcpy(blank_direntry->od_name, dentry->d_name.name, dentry->d_name.len * sizeof(char));
+	blank_direntry->od_name[dentry->d_name.len] = '\0';
+
+	temp->oi_size = 0;
+	temp->oi_mode = mode;
+	temp->oi_indirect = 0;
+	temp->oi_indirect2 = 0;
+	temp->oi_ftype = OSPFS_FTYPE_REG;
+	
+	int j;
+	for(j = 0; j < OSPFS_NDIRECT; j++)
+	{
+		temp->oi_direct[j] = 0;
 	}
 
-	//initialize directory struct's fields
-	created_directory->od_ino = entry_ino;
-	memcpy(created_directory->od_name, dentry->d_name.name, dentry->d_name.len);
-	created_directory->od_name[dentry->d_name.len] = 0;
 
-	//initialize inode struct's fields
-	created_inode->oi_size = 0;
-	created_inode->oi_ftype = OSPFS_FTYPE_REG;
-	created_inode->oi_mode = mode;
-	//initialize the direct block pointers to 0
-	memset(created_inode->oi_direct, 0, sizeof(created_inode->oi_direct[0]) * OSPFS_NDIRECT);
-	created_inode->oi_indirect = 0;
-	created_inode->oi_indirect2= 0;
 
 	/* Execute this code after your function has successfully created the
 	   file.  Set entry_ino to the created file's inode number before
@@ -1512,6 +1486,28 @@ ospfs_create(struct inode *dir, struct dentry *dentry, int mode, struct nameidat
 	}
 }
 
+
+// ospfs_symlink(dirino, dentry, symname)
+//   Linux calls this function to create a symbolic link.
+//   It is the ospfs_dir_inode_ops.symlink callback.
+//
+//   Inputs: dir     -- a pointer to the containing directory's inode
+//           dentry  -- the name of the file that should be created
+//                      The only important elements are:
+//                      dentry->d_name.name: filename (char array, not null
+//                           terminated)
+//                      dentry->d_name.len: length of filename
+//           symname -- the symbolic link's destination
+//
+//   Returns: 0 on success, -(error code) on error.  In particular:
+//               -ENAMETOOLONG if dentry->d_name.len is too large, or
+//			       'symname' is too long;
+//               -EEXIST       if a file named the same as 'dentry' already
+//                             exists in the given 'dir';
+//               -ENOSPC       if the disk is full & the file can't be created;
+//               -EIO          on I/O error.
+//
+//   EXERCISE: Complete this function.
 
 static int
 ospfs_symlink(struct inode *dir, struct dentry *dentry, const char *symname)
@@ -1595,6 +1591,7 @@ ospfs_follow_link(struct dentry *dentry, struct nameidata *nd)
 	ospfs_symlink_inode_t *oi =
 		(ospfs_symlink_inode_t *) ospfs_inode(dentry->d_inode->i_ino);
 	// Exercise: Your code here.
+	
 
 	nd_set_link(nd, oi->oi_symlink);
 	return (void *) 0;
@@ -1667,4 +1664,3 @@ module_exit(exit_ospfs_fs)
 MODULE_AUTHOR("Skeletor");
 MODULE_DESCRIPTION("OSPFS");
 MODULE_LICENSE("GPL");
-
