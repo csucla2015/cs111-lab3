@@ -765,77 +765,137 @@ direct_index(uint32_t b)
 static int
 add_block(ospfs_inode_t *oi)
 {
+	int i;
+  uint32_t n;
+  uint32_t * newblock;
+  uint32_t newblock_no;
+  
+  if(oi->oi_ftype == OSPFS_FTYPE_SYMLINK)
+		return 0;
+
 	// current number of blocks in file
-	uint32_t n = ospfs_size2nblocks(oi->oi_size);
+	n = ospfs_size2nblocks(oi->oi_size);
 
 	// keep track of allocations to free in case of -ENOSPC
-	uint32_t *allocated[2] = { 0, 0 };
-
-
-
-	///////////////////Have TO CHANGE//////////////////
-	uint32_t indirect = 0, indirect2 = 0, direct = 0;
-	if(n > OSPFS_MAXFILEBLKS)
-		return -EIO; // Replace this line
-
-	//Remember that n-1 was the last block we allocated.
-	//n is the current byte number that we're allocating.
-	//Let's see if we have to make the indirect2 block.
-	if(indir2_index(n) != indir2_index(n - 1))
-	{
-		//Remember that allocated block returns 0 on a failure
-		indirect2 = allocate_block();
-		if(!indirect2)
-			return -ENOSPC;
-
-		allocated[0] = ospfs_block(indirect2);
-		memset(allocated[0], 0, OSPFS_BLKSIZE);
-		oi->oi_indirect2 = indirect2;
-	}
-	//Let's see if we have to make an indirect block.
-	if(indir_index(n) != indir_index(n-1))
-	{
-		indirect = allocate_block();
-		if(!indirect) //If we couldn't allocate it
-		{
-			if(indirect2) //If we already allocated an indirect2
-				free_block(indirect2);
-			return -ENOSPC;
-		}
-		allocated[1] = ospfs_block(indirect);
-		memset(allocated[1], 0, OSPFS_BLKSIZE);
-		oi->oi_indirect = indirect;
-	}
-
-	if(!(direct = allocate_block()))
-	{
-		if(indirect)
-				free_block(indirect);
-		if(indirect2)
-				free_block(indirect2);
-		return -ENOSPC;
-	}
-	memset(ospfs_block(direct), 0, OSPFS_BLKSIZE);
-
-	//By here, we've made our blocks.
-	if(oi->oi_indirect2) //If there's an allocated block.
-	{
-		allocated[0] = ospfs_block(oi->oi_indirect2);
-		allocated[1] = ospfs_block(allocated[0][indir_index(n)]);
-		allocated[1][direct_index(n)] = direct;
-	}
-	else if(oi->oi_indirect)
-	{
-		allocated[1] = ospfs_block(oi->oi_indirect);
-		allocated[1][direct_index(n)] = direct;
-	}
-	else //Use n instead of wasting time with a function call.
-	{
-		oi->oi_direct[n] = direct;
-	}
-
-	oi->oi_size += OSPFS_BLKSIZE; //Update Size
-	return 0;
+	uint32_t allocated[2] = { 0, 0 };
+  
+  // If adding a block requires using the indirect2 and it wasn't
+  //  previously in use, we need to allocate space for indir2
+  if (n >= OSPFS_NDIRECT + OSPFS_NINDIRECT && (n-1) < OSPFS_NDIRECT + OSPFS_NINDIRECT) 
+  {
+    allocated[1] = allocate_block();
+    // If indirect2 block allocation fails
+    if(allocated[1] == 0)
+    {
+      return -ENOSPC;
+    }
+      
+     // Zero out new block
+    newblock = ospfs_block(allocated[1]);
+    for(i = 0; i < OSPFS_BLKSIZE / 4; i++)
+      newblock[i] = 0;
+  }
+  // If increasing the size means a new indirect block is needed
+  //  either the first indirect, or new indir in the indir2, both
+  //  situations are accounted for    
+  if(n >= OSPFS_NDIRECT && (n-1) < OSPFS_NDIRECT )
+  {
+    allocated[0] = allocate_block();
+    // If indirect block allocation fails
+    if(allocated[0] == 0)
+    {
+      if(allocated[1] != 0)
+        free_block(allocated[1]);
+      return -ENOSPC;
+    }
+     
+    // Zero out new block
+    newblock = ospfs_block(allocated[0]);
+    for(i = 0; i < OSPFS_BLKSIZE / 4; i++)
+      newblock[i] = 0;
+  }
+   
+  newblock_no = allocate_block();
+  
+  // If allocation fails for the actual data block
+  if(newblock_no == 0)
+  {
+    // Ensure already allocated blocks don't get used
+    if(allocated[0] != 0)
+      free_block(allocated[0]);
+    if(allocated[1] != 0)
+      free_block(allocated[1]);
+    return -ENOSPC;   
+  } 
+  // Zero out the new block
+  uint32_t * new_block = ospfs_block(newblock_no);
+  for(i = 0; i < OSPFS_BLKSIZE / 4; i++)
+    new_block[i] = 0;
+  
+  
+  int r = 0;
+  
+  if( indir2_index(n) == 0)
+  {
+    // Check if indir2 was just allocated
+    if(allocated[1] != 0)
+      oi->oi_indirect2 = allocated[1];
+    
+    // indir2 must be valid by now
+    if(oi->oi_indirect2 != 0)
+    {
+      uint32_t *indirect2_block = ospfs_block(oi->oi_indirect2);
+      // Check if the block of indirect pointers was just allocated
+      if(allocated[0] != 0)
+        indirect2_block[indir_index(n)] = allocated[0];
+      
+      // The indir block must be allocated by now
+      if(indirect2_block[indir_index(n)] != 0)
+      {
+        uint32_t *indirect_block = ospfs_block(indirect2_block[indir_index(n)]);
+        // Assign in the indirect's block the newly assigned data block
+        indirect_block[direct_index(n)] = newblock_no;
+      }
+      else
+        r = -EIO;
+    }
+    else
+      r = -EIO;
+	} 
+  else if (n >= OSPFS_NDIRECT) {
+    // New block is singly indirected, check if indir was just allocated
+    if(allocated[0] != 0)
+      oi->oi_indirect = allocated[0];
+    
+    // The indir block must be allocated by now
+    if(oi->oi_indirect != 0)
+    {
+      uint32_t *indirect_block = ospfs_block(oi->oi_indirect);
+      // In indir's block, place the newly assigned data block number
+      indirect_block[direct_index(n)] = newblock_no;
+    }
+    else
+      r = -EIO;
+  }
+  else
+  {
+    // Put the newly allocated block's number in direct array
+    oi->oi_direct[direct_index(n)] = newblock_no;
+  }
+  
+  if(r != 0)
+  {
+    // Ensure already allocated blocks don't get used
+    if(allocated[0] != 0)
+      free_block((int)allocated[0]);
+    if(allocated[1] != 0)
+      free_block((int)allocated[1]);
+    return r;   
+  } 
+  
+  // Change the size of the file
+  oi->oi_size = (n + 1) * OSPFS_BLKSIZE;
+	return r;
 }
 
 
