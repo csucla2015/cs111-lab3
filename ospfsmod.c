@@ -1478,6 +1478,45 @@ ospfs_symlink(struct inode *dir, struct dentry *dentry, const char *symname)
 	/* EXERCISE: Your code here. */
 	//return -EINVAL;
 
+	ospfs_direntry_t* blank_direntry = create_blank_direntry(dir_oi);
+	if(IS_ERR(blank_direntry)) PTR_ERR(blank_direntry);
+
+	if(dentry->d_name.len > OSPFS_MAXNAMELEN || strlen(symname) > OSPFS_MAXNAMELEN)
+		return -ENAMETOOLONG;
+
+	if(find_direntry(dir_oi, dentry->d_name.name, dentry->d_name.len) != NULL)
+		return -EEXIST;
+
+	ospfs_inode_t* temp2;
+	int flag = 0;
+	for(entry_ino = 0; entry_ino < ospfs_super->os_ninodes; entry_ino++)
+	{
+		temp2 = ospfs_inode(entry_ino);
+
+		if(temp2->oi_nlink == 0)
+		{
+			flag = 1;
+			temp2->oi_nlink++;
+			break;
+		}
+
+	}
+
+	if(flag == 0)
+		return -ENOSPC;
+
+
+	blank_direntry->od_ino = entry_ino;
+	memcpy(blank_direntry->od_name,dentry->d_name.name,dentry->d_name.len * sizeof(char));
+	blank_direntry->od_name[dentry->d_name.len] = '\0';
+	
+	ospfs_symlink_inode_t * temp = (ospfs_symlink_inode_t*)temp2;
+	memcpy(temp->oi_symlink,symname, strlen(symname)*sizeof(char));
+	temp->oi_symlink[strlen(symname)] = '\0';
+	temp->oi_ftype = OSPFS_FTYPE_SYMLINK;
+	temp->oi_size = strlen(symname);
+
+	
 	
 
 	/* Execute this code after your function has successfully created the
