@@ -8,14 +8,13 @@
 
 # If you have any other information you'd like us to know, please add it at the end of the file.
 
-# Partner 1
-Name: 
-Student ID: 
-Email: 
 
-# Partner 2 (if you're working in a team)
-Name: 
-Student ID: 
-Email: 
+Name: Akshaan Kakar   
+UId: 804029538         
+akshaan@ucla.edu
+
+Name: Meet Bhagdev
+UId: 104079094
+meetbhagdev@ucla.edu
 
 # Add any other information you'd like us to know below this line.
