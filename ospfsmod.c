@@ -1057,7 +1057,7 @@ ospfs_read(struct file *filp, char __user *buffer, size_t count, loff_t *f_pos)
 	// Make sure we don't read past the end of the file!
 	// Change 'count' so we never read past the end of the file.
 	/* EXERCISE: Your code here */
-		count = min(count, (oi->oi_size - *f_pos));
+		count = min(count,(oi->oi_size - *f_pos));
 
 
 	// Copy the data to user block by block
@@ -1087,7 +1087,8 @@ ospfs_read(struct file *filp, char __user *buffer, size_t count, loff_t *f_pos)
 			n = remaining;
 
 		// Copy data to user, and return segfault if unsuccessful
-		if(0 > copy_to_user(buffer, data, n))
+		int r = copy_to_user(buffer, data, n);
+		if(r < 0)
 		{
 			retval = -EFAULT;
 			goto done;
